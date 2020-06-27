@@ -156,3 +156,9 @@ if __name__ == "__main__":
 # TODO 4: Showing that the typed crypto doesn't exist (red border?)
 # TODO 5: Auto-update feature : background thread that runs the updateValues
 #         method every minute if self.auto_update is True
+# TODO 6: Add a way to select either a custom rate/price (useful for exchanges)
+#         or the live one provided by CoinGecko (use auto-update if selected)
+# TODO 7: Find a way to improve the latency induced by quering the API with
+#         every letter typed (caching, wait for whem user stopped typing, 
+#         fetch the api in background and display a loading icon?)
+# TODO 8: Write the readme
