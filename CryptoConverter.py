@@ -1,6 +1,7 @@
 import datetime, time
 import gi
 import json
+import numpy as np
 
 gi.require_version('Gtk', '3.0')
 
@@ -68,8 +69,7 @@ class Handler:
         else:
             return 0
 
-        # TODO 3
-        self.conv_result.set_text(f"{amount * self.current_rate:.8f}")
+        self.conv_result.set_text(convert(self.current_rate, amount))
         update_time_label(self.time_update)
 
     def convertValue(self, *args):
@@ -94,11 +94,21 @@ class Handler:
                 amount = None
 
         if amount:
-            # TODO 3
-            self.conv_result.set_text(f"{amount * self.current_rate:.8f}")
+            self.conv_result.set_text(convert(self.current_rate, amount))
         else:
             self.conv_result.set_text("N/A")
         update_time_label(self.time_update)
+
+
+def convert(rate, amount):
+    # Remove the scientific notation and get the precision returned by the API
+    str_rate = np.format_float_positional(rate, trim='-')
+    if '.' in str_rate:
+        precision = len(str_rate.split('.')[1])
+    else:
+        precision = 0
+
+    return np.format_float_positional(round(rate * amount, precision), trim='-')
 
 
 def update_time_label(label):
