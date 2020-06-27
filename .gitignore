@@ -128,3 +128,4 @@ dmypy.json
 # Pyre type checker
 .pyre/
 layout.glade~
+conf/config.json

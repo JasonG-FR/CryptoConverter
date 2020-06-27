@@ -9,23 +9,43 @@ from pycoingecko import CoinGeckoAPI
 
 
 class Handler:
-    def __init__(self, builder, default):
+    def __init__(self, builder):
+        # Load the config file or the defaults if it fails
+        try:
+            with open('conf/config.json', 'r') as json_file:
+                config = json.load(json_file)
+        except FileNotFoundError:
+            config = {'cryptocurrency': 'BTC', 'vs_currency': 'USD'}
+        
+        self.cg = CoinGeckoAPI()
         self.source_unit = builder.get_object('source_unit')
         self.conv_unit = builder.get_object('conv_unit')
         self.source_amount = builder.get_object('source_amount')
         self.conv_result = builder.get_object('conv_result')
         self.time_update = builder.get_object('time_update')
-        self.cg = CoinGeckoAPI()
         self.current_rate = None
-        self.current_crypto = None
-        self.current_currency = None
+        self.current_crypto = config['cryptocurrency']
+        self.current_currency = config['vs_currency']
         self.auto_update = True
         self.crypto_ids = load_supported_cryptos()
         self.currencies = load_supported_vs_currencies()
-        populate_combobox(self.conv_unit, self.currencies, default)
-        self.convertValue()
+        
+        # Updating the UI with the config values
+        self.source_unit.set_text(self.current_crypto)
+        populate_combobox(self.conv_unit, self.currencies, 
+                          self.current_currency)
+        
+        # Get and display the data received from the API
+        self.updateValues()
 
     def onDestroy(self, *args):
+        # Saves the active crypto and currency in the config file
+        config = {'vs_currency': self.current_currency.upper(),
+                  'cryptocurrency': self.current_crypto.upper()}
+
+        with open('conf/config.json', 'w') as json_file:
+            json.dump(config, json_file)
+
         Gtk.main_quit()
 
     def toggleAutoUpdate(self, *args):
@@ -55,6 +75,7 @@ class Handler:
     def convertValue(self, *args):
         source = self.source_unit.get_text().lower()
         conv = self.currencies[self.conv_unit.get_active()].lower()
+
         try:
             amount = float(self.source_amount.get_text())
         except ValueError:
@@ -140,25 +161,10 @@ def main():
 
     window = builder.get_object('main_window')
 
-    builder.connect_signals(Handler(builder, 'USD'))
+    builder.connect_signals(Handler(builder))
 
     window.show_all()
     Gtk.main()
 
 if __name__ == "__main__":
     main()
-
-# TODO 1: Remember the last currency selected instead of USD
-# TODO 2: Add a background service/thread to update the config files once in a 
-#         while. Update it once when started, update values when received and
-#         make sure to not run it more than once every 24h.
-# TODO 3: Format should adapt to the currency precision (8 for BTC, 2 for EUR)
-# TODO 4: Showing that the typed crypto doesn't exist (red border?)
-# TODO 5: Auto-update feature : background thread that runs the updateValues
-#         method every minute if self.auto_update is True
-# TODO 6: Add a way to select either a custom rate/price (useful for exchanges)
-#         or the live one provided by CoinGecko (use auto-update if selected)
-# TODO 7: Find a way to improve the latency induced by quering the API with
-#         every letter typed (caching, wait for whem user stopped typing, 
-#         fetch the api in background and display a loading icon?)
-# TODO 8: Write the readme
