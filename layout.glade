@@ -94,7 +94,7 @@
                     <property name="can_focus">True</property>
                     <property name="valign">center</property>
                     <property name="text" translatable="yes">BTC</property>
-                    <signal name="changed" handler="convertValue" swapped="no"/>
+                    <signal name="activate" handler="convertValue" swapped="no"/>
                   </object>
                   <packing>
                     <property name="expand">False</property>
