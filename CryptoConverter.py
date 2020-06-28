@@ -1,12 +1,20 @@
 import datetime, time
 import gi
 import json
+import threading
 import numpy as np
 
 gi.require_version('Gtk', '3.0')
 
 from gi.repository import Gtk
 from pycoingecko import CoinGeckoAPI
+
+
+class ConfigUpdater(threading.Thread):
+    def __init__(self, handler):
+        threading.Thread.__init__(self, target=update_conf_files, 
+                                  args=(handler,))
+        self.start()
 
 
 class Handler:
@@ -30,12 +38,20 @@ class Handler:
         self.auto_update = True
         self.crypto_ids = load_supported_cryptos()
         self.currencies = load_supported_vs_currencies()
-        
-        # Updating the UI with the config values
         self.source_unit.set_text(self.current_crypto)
-        populate_combobox(self.conv_unit, self.currencies, 
-                          self.current_currency)
         
+        if self.crypto_ids is None or self.currencies is None:
+            # Download the config files directly from the API
+            update_conf_files(self)
+        
+        else:
+            # Updating the UI with the config values
+            populate_combobox(self.conv_unit, self.currencies, 
+                              self.current_currency)
+
+            # Update the config files in the background
+            ConfigUpdater(self)
+
         # Get and display the data received from the API
         self.updateValues()
 
@@ -125,7 +141,7 @@ def update_time_label(label):
     label.set_text(f"Powered by CoinGecko\nLast updated: {now}")
 
 
-def update_conf_files():
+def update_conf_files(handler):
     # Fetch all the supported cryptos from CoinGecko and saves them using JSON
     cg = CoinGeckoAPI()
     data = cg.get_coins_list()
@@ -139,20 +155,32 @@ def update_conf_files():
     with open('conf/supported_vs_currencies.json', 'w') as json_file:
         json.dump(vs_currencies, json_file)
 
+    # Update the values loaded from previous config file
+    handler.crypto_ids = supported_cryptos
+    handler.currencies = sorted([vsc.upper() for vsc in vs_currencies])
+    populate_combobox(handler.conv_unit, handler.currencies, 
+                      handler.current_currency)
+
 
 def load_supported_cryptos():
     # Load the supported cryptocurrencies from a local JSON file (faster)
-    with open('conf/supported_cryptos.json', 'r') as json_file:
-        data = json.load(json_file)    
-    
-    return data
+    try:
+        with open('conf/supported_cryptos.json', 'r') as json_file:
+            data = json.load(json_file)
+        return data
+
+    except FileNotFoundError:
+        return None
 
 
 def load_supported_vs_currencies():
-    with open('conf/supported_vs_currencies.json', 'r') as json_file:
-        data = json.load(json_file)
-
-    return sorted([d.upper() for d in data])
+    try:
+        with open('conf/supported_vs_currencies.json', 'r') as json_file:
+            data = json.load(json_file)
+        return sorted([d.upper() for d in data])
+    
+    except FileNotFoundError:
+        return None
 
 
 def populate_combobox(cbox, values, default):
