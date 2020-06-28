@@ -32,6 +32,8 @@ class Handler:
         self.source_amount = builder.get_object('source_amount')
         self.conv_result = builder.get_object('conv_result')
         self.time_update = builder.get_object('time_update')
+        self.crypto_completion = builder.get_object('crypto_completion')
+        self.currency_completion = builder.get_object('currency_completion')
         self.current_rate = None
         self.current_crypto = config['cryptocurrency']
         self.current_currency = config['vs_currency']
@@ -39,6 +41,7 @@ class Handler:
         self.crypto_ids = load_supported_cryptos()
         self.currencies = load_supported_vs_currencies()
         self.source_unit.set_text(self.current_crypto)
+        self.conv_unit.set_text(self.current_currency)
         
         if self.crypto_ids is None or self.currencies is None:
             # Download the config files directly from the API
@@ -46,8 +49,8 @@ class Handler:
         
         else:
             # Updating the UI with the config values
-            populate_combobox(self.conv_unit, self.currencies, 
-                              self.current_currency)
+            populate_completion(self.crypto_completion, self.crypto_ids)
+            populate_completion(self.currency_completion, self.currencies)
 
             # Update the config files in the background
             ConfigUpdater(self)
@@ -72,7 +75,7 @@ class Handler:
     def updateValues(self, *args):
         # TODO 5
         source = self.source_unit.get_text().lower()
-        conv = self.currencies[self.conv_unit.get_active()].lower()
+        conv = self.conv_unit.get_text().lower()
         try:
             amount = float(self.source_amount.get_text())
         except ValueError:
@@ -90,7 +93,7 @@ class Handler:
 
     def convertValue(self, *args):
         source = self.source_unit.get_text().lower()
-        conv = self.currencies[self.conv_unit.get_active()].lower()
+        conv = self.conv_unit.get_text().lower()
 
         try:
             amount = float(self.source_amount.get_text())
@@ -158,8 +161,9 @@ def update_conf_files(handler):
     # Update the values loaded from previous config file
     handler.crypto_ids = supported_cryptos
     handler.currencies = sorted([vsc.upper() for vsc in vs_currencies])
-    populate_combobox(handler.conv_unit, handler.currencies, 
-                      handler.current_currency)
+
+    populate_completion(handler.crypto_completion, handler.crypto_ids)
+    populate_completion(handler.currency_completion, handler.currencies)
 
 
 def load_supported_cryptos():
@@ -183,14 +187,14 @@ def load_supported_vs_currencies():
         return None
 
 
-def populate_combobox(cbox, values, default):
+def populate_completion(completion, values):
     values_store = Gtk.ListStore(str)
-    
-    for value in values:
-        values_store.append([value])
 
-    cbox.set_model(values_store)
-    cbox.set_active(values.index(default))
+    for value in values:
+        values_store.append([value.upper()])
+    
+    completion.set_model(values_store)
+    completion.set_text_column(0)
 
 
 def main():
