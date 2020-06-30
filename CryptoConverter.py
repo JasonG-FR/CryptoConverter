@@ -1,4 +1,5 @@
-import datetime, time
+import datetime
+import time
 import gi
 import json
 import threading
@@ -19,14 +20,9 @@ class ConfigUpdater(threading.Thread):
 
 class Handler:
     def __init__(self, builder):
-        # Load the config file or the defaults if it fails
-        try:
-            with open('conf/config.json', 'r') as json_file:
-                config = json.load(json_file)
-        except FileNotFoundError:
-            config = {'cryptocurrency': 'BTC', 'vs_currency': 'USD'}
-        
+        config = load_config()
         self.cg = CoinGeckoAPI()
+        
         self.source_unit = builder.get_object('source_unit')
         self.conv_unit = builder.get_object('conv_unit')
         self.source_amount = builder.get_object('source_amount')
@@ -37,13 +33,16 @@ class Handler:
         self.radio_api = builder.get_object('radio_api')
         self.api_rate = builder.get_object('api_rate')
         self.custom_rate = builder.get_object('custom_rate')
-        self.current_rate = None
+        
         self.current_crypto = config['cryptocurrency']
         self.current_currency = config['vs_currency']
         self.source = 'api'
+        self.current_rate = None
         self.auto_update = True
+        self.inverted_rates = False
         self.crypto_ids = load_supported_cryptos()
         self.currencies = load_supported_vs_currencies()
+
         self.source_unit.set_text(self.current_crypto)
         self.conv_unit.set_text(self.current_currency)
         
@@ -56,15 +55,14 @@ class Handler:
             populate_completion(self.crypto_completion, self.crypto_ids)
             populate_completion(self.currency_completion, self.currencies)
 
-            # Update the config files in the background
+            # Update the config files in a background thread
             ConfigUpdater(self)
 
         # Get and display the data received from the API
         self.updateValues()
-        str_rate = np.format_float_positional(self.current_rate, trim='-')
-        self.custom_rate.set_text(str_rate)
+        self.updateRate()
 
-        # Start the auto-updater in the background
+        # Start the auto-updater in the background with 10s interval
         GLib.timeout_add(interval=10000, function=self.updateValues)
 
     def onDestroy(self, *args):
@@ -80,44 +78,47 @@ class Handler:
     def toggleAutoUpdate(self, *args):
         self.auto_update = not self.auto_update
 
+    def toggleInvertRates(self, *args):
+        self.inverted_rates = not self.inverted_rates
+        self.updateRate()
+
+        if self.source == 'custom':
+            self.convertValue()
+
     def toggleAPI(self, *args):
-        print('API toggled')
         self.source = 'api'
         self.updateAPIValues()
 
     def toggleCustom(self, *args):
-        print('Custom toggled')
         self.source = 'custom'
         self.convertValue()
     
     def updateValues(self, *args):
-        if self.source == 'api':
-            if self.auto_update:
-                source = self.source_unit.get_text().lower()
-                conv = self.conv_unit.get_text().lower()
-                try:
-                    amount = float(self.source_amount.get_text())
-                except ValueError:
-                    return True
-
-                if source in self.crypto_ids:
-                    cid = self.crypto_ids[source]
-                    data = self.cg.get_price(ids=cid, vs_currencies=conv)
-                    self.current_rate = data[cid][conv]
-                else:
-                    return True
-
-                self.conv_result.set_text(convert(self.current_rate, amount))
-                str_rate = np.format_float_positional(self.current_rate,
-                                                      trim='-')
-                self.api_rate.set_text(f'{str_rate} {conv}/{source}'.upper())
-                update_time_label(self.time_update)
+        if self.auto_update:
+            source = self.source_unit.get_text().lower()
+            conv = self.conv_unit.get_text().lower()
+            try:
+                amount = float(self.source_amount.get_text())
+            except ValueError:
                 return True
+
+            if source in self.crypto_ids:
+                cid = self.crypto_ids[source]
+                data = self.cg.get_price(ids=cid, vs_currencies=conv)
+                self.current_rate = data[cid][conv]
             else:
                 return True
+
+            if self.source == 'api':
+                result = convert(self.current_rate, self.current_rate, amount,
+                                 self.source, self.inverted_rates)
+                self.conv_result.set_text(result)
+            self.updateRate()
+            update_time_label(self.time_update)
+            return True
         else:
             return True
-
+                
     def updateAPIValues(self, *args):
         source = self.source_unit.get_text().lower()
         conv = self.conv_unit.get_text().lower()
@@ -133,11 +134,11 @@ class Handler:
         else:
             return True
 
-        self.conv_result.set_text(convert(self.current_rate, amount))
-        str_rate = np.format_float_positional(self.current_rate, trim='-')
-        self.api_rate.set_text(f'{str_rate} {conv}/{source}'.upper())
+        result = convert(self.current_rate, self.current_rate, amount, 
+                         self.source, self.inverted_rates)
+        self.conv_result.set_text(result)
+        self.updateRate()
         update_time_label(self.time_update)
-        return True
 
     def convertValue(self, *args):
         source = self.source_unit.get_text().lower()
@@ -149,7 +150,7 @@ class Handler:
             amount = None
 
         if self.source == 'api':
-            # Get the price from CG API and save it if crypto or currency changed
+            # Get the price from CG API only if crypto and/or currency changed
             if self.current_crypto != source or self.current_currency != conv:
                 if source in self.crypto_ids:
                     cid = self.crypto_ids[source]
@@ -157,34 +158,68 @@ class Handler:
                     self.current_rate = data[cid][conv]
                     self.current_crypto = source
                     self.current_currency = conv
+                    result = convert(self.current_rate, self.current_rate,
+                                     amount, self.source, self.inverted_rates)
+                    self.conv_result.set_text(result)
+                    self.updateRate()
                 else:
-                    amount = None
+                    self.conv_result.set_text("N/A")
         else:
             try:
-                self.current_rate = float(self.custom_rate.get_text())
+                custom_rate = float(self.custom_rate.get_text())
+                result = convert(self.current_rate, custom_rate, amount,
+                                 self.source, self.inverted_rates)
+                self.conv_result.set_text(result)
             except ValueError:
-                amount = None
+                self.conv_result.set_text("N/A")
 
-        if amount:
-            self.conv_result.set_text(convert(self.current_rate, amount))
-            if source == 'api':
-                str_rate = np.format_float_positional(self.current_rate,
-                                                      trim='-')
-                self.api_rate.set_text(f'{str_rate} {conv}/{source}'.upper())
-        else:
-            self.conv_result.set_text("N/A")
         update_time_label(self.time_update)
 
+    def updateRate(self):
+        source = self.source_unit.get_text()
+        conv = self.conv_unit.get_text()
+        str_rate = np.format_float_positional(self.current_rate, trim='-')
 
-def convert(rate, amount):
+        if self.inverted_rates:
+            precision = len(str_rate.split(".")[1])
+            str_rate = round(1 / self.current_rate, precision)
+            str_rate = np.format_float_positional(str_rate, trim='-')
+            str_rate = f'{str_rate} {source}/{conv}'
+        else:
+            str_rate = f'{str_rate} {conv}/{source}'
+        self.api_rate.set_text(str_rate)
+
+
+def load_config():
+    # Load the config file or the defaults if it fails
+    try:
+        with open('conf/config.json', 'r') as json_file:
+            config = json.load(json_file)
+    except FileNotFoundError:
+        config = {'cryptocurrency': 'BTC', 'vs_currency': 'USD'}
+
+    return config
+
+
+def convert(api_rate, rate, amount, source, inverted):
     # Remove the scientific notation and get the precision returned by the API
-    str_rate = np.format_float_positional(rate, trim='-')
+    str_rate = np.format_float_positional(api_rate, trim='-')
     if '.' in str_rate:
         precision = len(str_rate.split('.')[1])
     else:
         precision = 0
 
-    return np.format_float_positional(round(rate * amount, precision), trim='-')
+    if source == 'api':
+        result = round(amount * rate, precision)
+    elif inverted:
+        try:
+            result = round(amount / rate, precision)
+        except ZeroDivisionError:
+            return 'N/A'
+    else:
+        result = round(amount * rate, precision)
+    
+    return np.format_float_positional(result, trim='-')
 
 
 def update_time_label(label):
