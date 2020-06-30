@@ -6,7 +6,7 @@ import numpy as np
 
 gi.require_version('Gtk', '3.0')
 
-from gi.repository import Gtk
+from gi.repository import Gtk, GLib
 from pycoingecko import CoinGeckoAPI
 
 
@@ -58,6 +58,9 @@ class Handler:
         # Get and display the data received from the API
         self.updateValues()
 
+        # Start the auto-updater in the background
+        GLib.timeout_add(interval=10000, function=self.updateValues)
+
     def onDestroy(self, *args):
         # Saves the active crypto and currency in the config file
         config = {'vs_currency': self.current_currency.upper(),
@@ -70,26 +73,28 @@ class Handler:
 
     def toggleAutoUpdate(self, *args):
         self.auto_update = not self.auto_update
-        self.updateValues()
     
     def updateValues(self, *args):
-        # TODO 5
-        source = self.source_unit.get_text().lower()
-        conv = self.conv_unit.get_text().lower()
-        try:
-            amount = float(self.source_amount.get_text())
-        except ValueError:
-            return 0
+        if self.auto_update:
+            source = self.source_unit.get_text().lower()
+            conv = self.conv_unit.get_text().lower()
+            try:
+                amount = float(self.source_amount.get_text())
+            except ValueError:
+                return True
 
-        if source in self.crypto_ids:
-            cid = self.crypto_ids[source]
-            data = self.cg.get_price(ids=cid, vs_currencies=conv)
-            self.current_rate = data[cid][conv]
+            if source in self.crypto_ids:
+                cid = self.crypto_ids[source]
+                data = self.cg.get_price(ids=cid, vs_currencies=conv)
+                self.current_rate = data[cid][conv]
+            else:
+                return True
+
+            self.conv_result.set_text(convert(self.current_rate, amount))
+            update_time_label(self.time_update)
+            return True
         else:
-            return 0
-
-        self.conv_result.set_text(convert(self.current_rate, amount))
-        update_time_label(self.time_update)
+            return True
 
     def convertValue(self, *args):
         source = self.source_unit.get_text().lower()
@@ -109,7 +114,6 @@ class Handler:
                 self.current_crypto = source
                 self.current_currency = conv
             else:
-                # TODO 4
                 amount = None
 
         if amount:
@@ -207,6 +211,7 @@ def main():
 
     window.show_all()
     Gtk.main()
+
 
 if __name__ == "__main__":
     main()
